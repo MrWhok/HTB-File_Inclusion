@@ -1,6 +1,7 @@
 # HTB-File_Inclusion
 
 ## Table of Contents
+0. [Tools](#tools)
 1. [File Disclosure](#file-disclosure)
     1. [Local File Inclusion (LFI)](#local-file-inclusion-lfi)
     2. [Basic Bypasses](#basic-bypasses)
@@ -10,6 +11,9 @@
     2. [Remote File Inclusion (RFI)](#remote-file-inclusion-rfi)
     3. [LFI and File Uploads](#lfi-and-file-uploads)
     4. [Log Poisoning](#log-poisoning)
+
+## Tools
+1. ffuf
 
 ## File Disclosure
 ### Local File Inclusion (LFI)
@@ -178,3 +182,62 @@
     ![alt text](<Assets/Log Poisoning - 4.png>)
 
     We can see the name of the flag file. We can cat it and get the flag. The answer is **HTB{1095_5#0u1d_n3v3r_63_3xp053d}**.
+
+## Automation and Prevention
+### Automated Scanning
+#### Challenges
+1. Fuzz the web application for exposed parameters, then try to exploit it with one of the LFI wordlists to read /flag.txt
+
+    First, we need to find the correct GET parameter. We can use **ffuf** to do this.
+
+    ```bash
+    ffuf -w /opt/useful/seclists/Discovery/Web-Content/burp-parameter-names.txt:FUZZ -u 'http://94.237.120.137:46330/index.php?FUZZ=value' -fs 2309
+    ```
+
+    ![alt text](<Assets/Automated Scanning - 1.png>)
+
+    We can see that the correct GET parameter is **view**. Now, we can try to fuzz the valid value of **view=FUZZ** parameter.
+
+    ```bash
+    ffuf -w /opt/useful/seclists/Fuzzing/LFI/LFI-Jhaddix.txt:FUZZ -u 'http://94.237.120.137:46330/index.php?view=FUZZ' -fs 2309
+    ```
+    ![alt text](<Assets/Automated Scanning - 2.png>)
+
+    We can use one of them and change **/etc/passwd** to **/flag.txt**. The answer is **HTB{4u70m47!0n_f!nd5_#!dd3n_93m5}**.
+
+### File Inclusion Prevention
+#### Challenges
+1. What is the full path to the php.ini file for Apache?
+
+    We can use this command to find the full path to the php.ini file for Apache:
+
+    ```bash
+    sudo find / -name php.ini
+    ```
+    The answer is **/etc/php/7.4/apache2/php.ini**.
+
+2. Edit the php.ini file to block system(), then try to execute PHP Code that uses system. Read the /var/log/apache2/error.log file and fill in the blank: system() has been disabled for ________ reasons.
+
+    We can open the php.ini file and edit it. Press Ctrl+W and type disable_functions. Then, we can add **system** to the list of disabled functions. After that, we can restart the Apache server.
+
+    ```bash
+    sudo systemctl restart apache2
+    ```
+    Then, we create the php file in the web root that contain disbaled system function.
+
+    ```bash
+    echo '<?php system("id"); ?>' | sudo tee /var/www/html/shell.php
+    ```
+    After that, we can try to access the file.
+
+    ```bash
+    curl http://localhost/shell.php
+    ```
+    Once we done that, we can see the error log.
+
+    ```bash
+    grep "system" /var/log/apache2/error.log
+    ```
+    ![alt text](<Assets/File Inclusion Prevention - 1.png>)
+
+    The answer is **security**.
