@@ -14,7 +14,7 @@
 3. [Automation and Prevention](#automation-and-prevention)
     1. [Automated Scanning](#automated-scanning)
     2. [File Inclusion Prevention](#file-inclusion-prevention)
-4. [Skills Assessment - File Inclusion](#skills-assessment-file-inclusion)
+4. [Skills Assessment - File Inclusion](#skills-assessment---file-inclusion)
 
 ## Tools
 1. ffuf
